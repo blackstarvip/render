@@ -1,14 +1,5 @@
 """
 eMaktab Automation Bot — Render.com Flask API
-=============================================
-Bu server:
-  - InfinityFree PHP saytidan HTTP so'rovlar qabul qiladi
-  - Selenium orqali eMaktab ga login qiladi
-  - Natijani JSON formatda qaytaradi
-
-Muhit o'zgaruvchilari (Render Dashboard > Environment):
-  BOT_API_KEY   — PHP config dagi RENDER_API_KEY bilan bir xil bo'lishi kerak
-  PORT          — Render avtomatik beradi (default: 10000)
 """
 
 import os
@@ -20,44 +11,35 @@ from functools import wraps
 from flask import Flask, request, jsonify
 from selenium_runner import run_login
 
-# ── Logging ──────────────────────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(name)s — %(message)s'
 )
 log = logging.getLogger('emaktab_flask')
 
-# ── Flask app ─────────────────────────────────────────────────────────────────
 app = Flask(__name__)
 app.config['JSON_ENSURE_ASCII'] = False
 
-# API kalitni muhit o'zgaruvchisidan olish
-BOT_API_KEY = os.environ.get('BOT_API_KEY', '')
 
-if not BOT_API_KEY:
-    log.warning("⚠️  BOT_API_KEY muhit o'zgaruvchisi o'rnatilmagan!")
-
-
-# ── Auth decorator ────────────────────────────────────────────────────────────
+# ── Auth decorator — kalit har so'rovda o'qiladi (cache yo'q) ─────────────────
 def require_api_key(f):
-    """X-API-Key header tekshiradi."""
     @wraps(f)
     def decorated(*args, **kwargs):
-        key = request.headers.get('X-API-Key', '')
-        if not BOT_API_KEY:
-            log.error("BOT_API_KEY o'rnatilmagan — barcha so'rovlar rad etiladi")
-            return jsonify({'status': 'error', 'detail': 'Server sozlanmagan'}), 503
-        if key != BOT_API_KEY:
+        api_key = os.environ.get('BOT_API_KEY', '')
+        if not api_key:
+            log.error("BOT_API_KEY o'rnatilmagan — Render Dashboard > Environment ni tekshiring")
+            return jsonify({'status': 'error', 'detail': "Server sozlanmagan: BOT_API_KEY yo'q"}), 503
+        incoming = request.headers.get('X-API-Key', '')
+        if incoming != api_key:
             log.warning(f"Noto'g'ri API kalit: IP={request.remote_addr}")
-            return jsonify({'status': 'error', 'detail': 'Ruxsat yo\'q'}), 403
+            return jsonify({'status': 'error', 'detail': "Ruxsat yo'q"}), 403
         return f(*args, **kwargs)
     return decorated
 
 
 # ── Health Check ──────────────────────────────────────────────────────────────
 @app.route('/', methods=['GET'])
-def health():
-    """Render health check uchun — API kalitsiz ishlaydi."""
+def index():
     return jsonify({
         'service': 'eMaktab Bot API',
         'status':  'running',
@@ -65,28 +47,15 @@ def health():
         'version': '1.1.0',
     })
 
-
 @app.route('/health', methods=['GET'])
 def health_check():
     return jsonify({'ok': True}), 200
 
 
-# ── Login Endpoint ─────────────────────────────────────────────────────────────
+# ── Login Endpoint ────────────────────────────────────────────────────────────
 @app.route('/api/login', methods=['POST'])
 @require_api_key
 def api_login():
-    """
-    InfinityFree PHP dan kelgan login so'rovini qayta ishlaydi.
-
-    Body (JSON):
-        emaktab_login    : str
-        emaktab_password : str
-        student_id       : int
-
-    Response (JSON):
-        status  : "success" | "error" | "captcha"
-        detail  : str (xato tavsifi)
-    """
     data = request.get_json(silent=True)
     if not data:
         return jsonify({'status': 'error', 'detail': "So'rov tanasi bo'sh yoki JSON emas"}), 400
@@ -96,21 +65,19 @@ def api_login():
     sid      = data.get('student_id', '?')
 
     if not login or not password:
-        return jsonify({'status': 'error', 'detail': 'Login yoki parol bo\'sh'}), 400
+        return jsonify({'status': 'error', 'detail': "Login yoki parol bo'sh"}), 400
 
     log.info(f"Login so'rovi: student_id={sid}, login={login[:3]}***")
     start = time.time()
 
-    # ── Selenium bot ishga tushirish ──────────────────
-    result = run_login(login, password)
-
+    result  = run_login(login, password)
     elapsed = round(time.time() - start, 2)
     log.info(f"Natija: student_id={sid}, status={result['status']}, vaqt={elapsed}s")
 
     return jsonify(result), 200
 
 
-# ── 404 / 405 handler ─────────────────────────────────────────────────────────
+# ── Error handlers ────────────────────────────────────────────────────────────
 @app.errorhandler(404)
 def not_found(e):
     return jsonify({'error': 'Endpoint topilmadi'}), 404
@@ -129,3 +96,4 @@ def handle_exception(e):
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
     app.run(host='0.0.0.0', port=port, debug=False)
+  
