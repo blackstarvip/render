@@ -1,0 +1,59 @@
+services:
+  - type: web
+    name: emaktab-bot
+    runtime: python
+    region: oregon          # yoki frankfurt — Render free tier
+
+    # Build bosqichi: Chrome + ChromeDriver + Python kutubxonalar
+    buildCommand: |
+      apt-get update -y
+      apt-get install -y \
+        chromium \
+        chromium-driver \
+        libglib2.0-0 \
+        libnss3 \
+        libgconf-2-4 \
+        libfontconfig1 \
+        libx11-xcb1 \
+        libxcb-dri3-0 \
+        libxcomposite1 \
+        libxcursor1 \
+        libxdamage1 \
+        libxfixes3 \
+        libxi6 \
+        libxrandr2 \
+        libxrender1 \
+        libxss1 \
+        libxtst6 \
+        libasound2 \
+        libatk-bridge2.0-0 \
+        libgtk-3-0
+      pip install -r requirements.txt
+
+    # Ishga tushirish: gunicorn bilan
+    startCommand: gunicorn app:app --workers 2 --timeout 120 --bind 0.0.0.0:$PORT
+
+    # Muhit o'zgaruvchilari (Render dashboard da ham qo'shish kerak!)
+    envVars:
+      - key: BOT_API_KEY
+        # ⚠️  Render Dashboard > Environment da o'rnating
+        # PHP config/config.php dagi RENDER_API_KEY bilan bir xil bo'lishi kerak
+        sync: false
+
+      - key: EMAKTAB_URL
+        value: https://login.emaktab.uz
+
+      - key: LOGIN_TIMEOUT
+        value: "15"
+
+      - key: PAGE_LOAD_WAIT
+        value: "3"
+
+      - key: PYTHONUNBUFFERED
+        value: "1"
+
+    # Health check
+    healthCheckPath: /health
+
+    # Free plan: 512 MB RAM
+    plan: free
